@@ -74,7 +74,7 @@ async function load() {
     tile("Attendance rate", pct == null ? "—" : pct + "%",
       pct == null ? "no class days yet" : pct < thr ? `<span class="chip serious">Below ${thr}%</span>` : `<span class="chip good">On track</span>`) +
     tile("Days present", r.present, `of ${r.possible} class days`) +
-    tile("Late arrivals", r.late, `after ${staff ? r.settings.late_after_staff : r.settings.late_after_student}`) +
+    tile("Late arrivals", r.late, `after ${p.late_after || (staff ? r.settings.late_after_staff : r.settings.late_after_student)}`) +
     tile("Absent in a row", streak, streak >= +r.settings.alert_consecutive ? '<span class="chip critical">Please contact the office</span>' : "") +
     (staff ? tile("Hours this month", monthHours.toFixed(1), `${r.hours} h in this period`) : "");
 
