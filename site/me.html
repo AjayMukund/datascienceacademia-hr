@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>My Attendance · Data Science Academia</title>
+<link rel="icon" href="assets/favicon.png">
+<link rel="stylesheet" href="assets/hr.css">
+</head>
+<body>
+<main>
+  <div class="page-head">
+    <div><h1 id="name">Attendance</h1><div class="sub" id="sub"></div></div>
+    <span style="flex:1"></span>
+    <select id="who" class="hidden" aria-label="Whose attendance"></select>
+    <div class="seg" id="range" role="group" aria-label="Period">
+      <button data-d="30">30 days</button><button data-d="90" class="on">90 days</button><button data-d="365">1 year</button>
+    </div>
+  </div>
+
+  <div id="none" class="card hidden"></div>
+
+  <div id="content" class="hidden">
+    <div class="tiles" id="tiles"></div>
+
+    <div class="card">
+      <div class="card-head"><h2>Calendar</h2><span class="sub">each square is one day</span></div>
+      <div class="months" id="months"></div>
+      <div class="legend">
+        <span><i style="background:color-mix(in srgb,var(--good) 70%,var(--ink))"></i>Present</span>
+        <span><i style="background:var(--warning)"></i>Late</span>
+        <span><i style="background:color-mix(in srgb,var(--critical) 80%,var(--ink))"></i>Absent</span>
+        <span><i style="background:var(--surface2);border:1px solid var(--border2)"></i>Holiday</span>
+        <span><i style="border:1px solid var(--fog)"></i>Today, not in yet</span>
+        <span><i style="background:transparent;border:1px dashed var(--fog2)"></i>No class</span>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-head"><h2>Day by day</h2><span class="sub">most recent first</span></div>
+      <div class="tw scroll"><table id="days"><thead><tr><th>Date</th><th>Status</th><th class="num">In</th><th class="num">Out</th><th class="num" id="hoursHead">Hours</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="assets/hr.js"></script>
+<script>
+let days = 90, pid = null;
+const STATUS = { present: ["good", "Present"], late: ["warning", "Late"], absent: ["critical", "Absent"],
+  holiday: ["", "Holiday"], off: ["", "No class"], pending: ["", "Not in yet"], none: ["", "Before joining"] };
+const tile = (l, v, n = "") => `<div class="tile"><div class="l">${l}</div><div class="v">${v}</div><div class="n">${n}</div></div>`;
+
+async function load() {
+  const r = await rpc("hr_person_report", { p_person: pid, p_days: days });
+  const p = r.person, staff = p.role === "staff";
+  $("name").textContent = p.name;
+  $("sub").textContent = `${p.code} · ${p.grp || (staff ? "Staff" : "Student")} · joined ${fmtDay(p.joined_on, { day: "numeric", month: "short", year: "numeric" })}`;
+  document.title = `${p.name} · Attendance`;
+
+  const pct = r.possible ? Math.round(1000 * r.present / r.possible) / 10 : null;
+  const list = r.days;
+  let streak = 0;
+  for (let i = list.length - 1; i >= 0; i--) {
+    const st = list[i].status;
+    if (st === "present" || st === "late" || st === "none") break;
+    if (st === "absent") streak++;
+  }
+  const thr = +r.settings.alert_min_pct;
+  const month = r.today.slice(0, 7);
+  const monthHours = list.filter(d => d.day.startsWith(month)).reduce((a, d) => a + (+d.hours || 0), 0);
+  $("tiles").innerHTML =
+    tile("Attendance rate", pct == null ? "—" : pct + "%",
+      pct == null ? "no class days yet" : pct < thr ? `<span class="chip serious">Below ${thr}%</span>` : `<span class="chip good">On track</span>`) +
+    tile("Days present", r.present, `of ${r.possible} class days`) +
+    tile("Late arrivals", r.late, `after ${staff ? r.settings.late_after_staff : r.settings.late_after_student}`) +
+    tile("Absent in a row", streak, streak >= +r.settings.alert_consecutive ? '<span class="chip critical">Please contact the office</span>' : "") +
+    (staff ? tile("Hours this month", monthHours.toFixed(1), `${r.hours} h in this period`) : "");
+
+  // calendar: one grid per month, Monday first
+  const byMonth = {};
+  list.forEach(d => (byMonth[d.day.slice(0, 7)] ||= []).push(d));
+  $("months").innerHTML = Object.entries(byMonth).reverse().map(([ym, ds]) => {
+    const first = new Date(ym + "-01T00:00"), lead = (first.getDay() + 6) % 7;
+    const startDay = +ds[0].day.slice(8), pad = (lead + startDay - 1) % 7;
+    const cells = ds.map(d => {
+      const [, label] = STATUS[d.status];
+      const t = `${fmtDay(d.day, { weekday: "short", day: "numeric", month: "short" })}: ${label}${d.holiday ? " (" + d.holiday + ")" : ""}${d.in ? " · in " + hhmm(d.in) : ""}${d.out ? " · out " + hhmm(d.out) : ""}`;
+      return `<div class="d ${d.status}" title="${esc(t)}" aria-label="${esc(t)}">${+d.day.slice(8)}</div>`;
+    });
+    return `<div class="month"><h3>${first.toLocaleDateString("en-IN", { month: "long", year: "numeric" })}</h3>
+      <div class="cal">${["M", "T", "W", "T", "F", "S", "S"].map(x => `<div class="dow">${x}</div>`).join("")}
+      ${"<div></div>".repeat(pad)}${cells.join("")}</div></div>`;
+  }).join("");
+
+  $("hoursHead").classList.toggle("hidden", !staff);
+  $("days").tBodies[0].innerHTML = list.slice().reverse().filter(d => d.status !== "none").map(d => {
+    const [cls, label] = STATUS[d.status];
+    return `<tr${d.status === "off" ? ' class="muted"' : ""}><td>${fmtDay(d.day, { weekday: "short", day: "numeric", month: "short" })}</td>
+      <td><span class="chip ${cls}">${label}${d.holiday ? ": " + esc(d.holiday) : ""}</span>${d.method === "manual" ? ' <span class="muted small">marked by office</span>' : ""}</td>
+      <td class="num">${hhmm(d.in)}</td><td class="num">${hhmm(d.out)}</td>${staff ? `<td class="num">${d.hours ?? ""}</td>` : ""}</tr>`;
+  }).join("");
+  $("content").classList.remove("hidden");
+}
+
+$("range").querySelectorAll("button").forEach(b => b.onclick = () => {
+  $("range").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+  days = +b.dataset.d; load().catch(e => toast(e.message));
+});
+$("who").onchange = () => { pid = $("who").value; history.replaceState(null, "", "?id=" + pid); load().catch(e => toast(e.message)); };
+
+boot("me").then(async who => {
+  const mine = [];
+  if (who.self) mine.push({ id: who.self.id, label: `${who.self.name} (me)` });
+  who.children.forEach(c => mine.push({ id: c.id, label: c.name }));
+  pid = new URLSearchParams(location.search).get("id") || mine[0]?.id;
+  if (!pid) {
+    if (who.is_admin || who.trainer_groups.length) { location.replace("dashboard.html"); return; }
+    $("name").textContent = "No attendance record yet";
+    $("none").innerHTML = `<p>Your account <b>${esc(who.email)}</b> isn't linked to a student or staff record.</p>
+      <p class="muted">Ask the office to add this email to your record (or as the guardian email for your child). It links automatically the next time you sign in.</p>`;
+    $("none").classList.remove("hidden");
+    $("range").classList.add("hidden");
+    return;
+  }
+  if (mine.length > 1 && mine.some(m => m.id === pid)) {
+    $("who").innerHTML = mine.map(m => `<option value="${m.id}" ${m.id === pid ? "selected" : ""}>${esc(m.label)}</option>`).join("");
+    $("who").classList.remove("hidden");
+  }
+  await load();
+}).catch(e => { toast(e.message, 8000); });
+</script>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>People & Access · Data Science Academia</title>
+<link rel="icon" href="assets/favicon.png">
+<link rel="stylesheet" href="assets/hr.css">
+</head>
+<body>
+<main>
+  <div class="page-head"><h1>People &amp; access</h1>
+    <span class="sub">People are added on the attendance PC and appear here after sync. Here you invite them and set what trainers can see.</span></div>
+
+  <div class="filters">
+    <input type="search" id="q" placeholder="Search name, ID, batch, email" aria-label="Search">
+    <select id="fRole" aria-label="Role"><option value="">Everyone</option><option value="student">Students</option><option value="staff">Staff</option></select>
+    <select id="fAcc" aria-label="Account"><option value="">Any account status</option><option value="none">No login yet</option><option value="linked">Linked</option></select>
+    <span class="sp"></span>
+    <span class="small muted" id="selCount"></span>
+    <button id="inviteBtn" class="gold" disabled>Invite selected…</button>
+  </div>
+
+  <div class="card">
+    <div class="tw"><table id="t">
+      <thead><tr><th><input type="checkbox" id="all" aria-label="Select all"></th><th>Person</th><th>Batch / Dept</th><th>Login</th><th>Parent / guardian</th><th>Trainer for</th></tr></thead>
+      <tbody></tbody></table></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-head"><h2>How access works</h2></div>
+    <ul class="small muted" style="margin:0;padding-left:18px;line-height:1.8">
+      <li><b>Admins</b>: anyone with the <i>admin</i> role in the student portal sees everything here.</li>
+      <li><b>Students &amp; staff</b> see only their own record. They're linked when they sign in with the email on their record.</li>
+      <li><b>Parents</b> see their child when they sign in with the guardian email on the child's record.</li>
+      <li><b>Trainers</b> also see the student batches you tick under "Trainer for".</li>
+      <li>Fingerprints are never uploaded; only check-in and check-out times are.</li>
+    </ul>
+  </div>
+</main>
+
+<dialog id="invDlg">
+  <form method="dialog" id="invForm" style="display:grid;gap:14px">
+    <h2>Send invites</h2>
+    <p class="small muted" style="margin:0">Each person gets an email with a link to set a password for hr.datascienceacademia.in. People who already have a portal login can just sign in.</p>
+    <label class="f">Send to
+      <select id="invWho"><option value="self">The person</option><option value="guardian">Their parent / guardian</option><option value="both">Both</option></select></label>
+    <div id="invOut" class="small"></div>
+    <div style="display:flex;gap:8px"><button class="gold" id="invGo" value="go">Send</button><button value="cancel" formnovalidate>Close</button></div>
+  </form>
+</dialog>
+
+<dialog id="tgDlg">
+  <form method="dialog" id="tgForm" style="display:grid;gap:14px">
+    <h2 id="tgTitle">Trainer for</h2>
+    <p class="small muted" style="margin:0">Which student batches can this trainer see?</p>
+    <div id="tgList" style="display:grid;gap:8px;max-height:300px;overflow:auto"></div>
+    <div style="display:flex;gap:8px"><button class="gold" value="save">Save</button><button value="cancel" formnovalidate>Cancel</button></div>
+  </form>
+</dialog>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="assets/hr.js"></script>
+<script>
+let P = [], sel = new Set(), tgFor = null;
+
+async function load() { P = await rpc("hr_admin_people") || []; render(); }
+
+function loginChip(p) {
+  if (!p.email) return '<span class="chip">No email</span>';
+  if (p.has_account) return '<span class="chip good">Linked</span>';
+  if (p.email_has_account) return '<span class="chip warning">Has login, links on sign-in</span>';
+  return '<span class="chip">No login yet</span>';
+}
+function guardianChip(p) {
+  if (p.role === "staff") return "";
+  if (!p.guardian_email) return '<span class="muted small">—</span>';
+  const st = p.guardian_linked ? '<span class="chip good">Linked</span>'
+    : p.guardian_has_account ? '<span class="chip warning">Links on sign-in</span>' : '<span class="chip">No login yet</span>';
+  return `<div class="small">${esc(p.guardian_email)}</div>${st}`;
+}
+
+function render() {
+  const q = $("q").value.toLowerCase(), r = $("fRole").value, acc = $("fAcc").value;
+  const rows = P.filter(p => p.active && (!r || p.role === r)
+    && (!acc || (acc === "linked") === p.has_account)
+    && (!q || `${p.name} ${p.code} ${p.grp} ${p.email} ${p.guardian_email}`.toLowerCase().includes(q)));
+  $("t").tBodies[0].innerHTML = rows.map(p => `<tr>
+      <td><input type="checkbox" data-id="${p.id}" ${sel.has(p.id) ? "checked" : ""} aria-label="Select ${esc(p.name)}"></td>
+      <td>${esc(p.name)}<div class="muted small">${esc(p.code)} · ${p.role === "staff" ? "Staff" : "Student"}${p.email ? " · " + esc(p.email) : ""}</div></td>
+      <td>${esc(p.grp)}</td><td>${loginChip(p)}</td><td>${guardianChip(p)}</td>
+      <td>${p.role === "staff" ? `${p.groups.length ? p.groups.map(esc).join(", ") : '<span class="muted small">none</span>'}
+          <div><button class="link small" data-tg="${p.id}">Edit</button></div>` : ""}</td></tr>`).join("")
+    || `<tr><td colspan="6" class="empty">No people yet. Turn on sync on the attendance PC (Admin, then Settings, then Online sync).</td></tr>`;
+  $("selCount").textContent = sel.size ? `${sel.size} selected` : "";
+  $("inviteBtn").disabled = !sel.size;
+}
+
+["q", "fRole", "fAcc"].forEach(id => $(id).addEventListener("input", render));
+$("t").addEventListener("change", e => {
+  const id = e.target.dataset.id; if (!id) return;
+  e.target.checked ? sel.add(id) : sel.delete(id); render();
+});
+$("all").onchange = e => {
+  document.querySelectorAll("#t tbody input[data-id]").forEach(cb => e.target.checked ? sel.add(cb.dataset.id) : sel.delete(cb.dataset.id));
+  render();
+};
+
+$("inviteBtn").onclick = () => { $("invOut").innerHTML = ""; $("invGo").disabled = false; $("invDlg").showModal(); };
+$("invForm").addEventListener("submit", async e => {
+  if (e.submitter?.value !== "go") return;
+  e.preventDefault();
+  $("invGo").disabled = true; $("invOut").textContent = "Sending…";
+  const { data, error } = await supa.functions.invoke("hr-invite", { body: { person_ids: [...sel], who: $("invWho").value } });
+  if (error || data?.error) {
+    let msg = data?.error || error.message;
+    try { msg = (await error.context.json()).error || msg; } catch {}
+    $("invOut").innerHTML = `<div class="msg err">${esc(msg)}</div>`; $("invGo").disabled = false; return;
+  }
+  $("invOut").innerHTML = `<table>${data.results.map(r => `<tr><td>${esc(r.name)}</td><td class="small">${esc(r.email)}</td>
+     <td><span class="chip ${r.status === "invited" ? "good" : r.status.startsWith("already") ? "" : "serious"}">${esc(r.status)}</span></td></tr>`).join("")}</table>`;
+  sel.clear(); load();
+});
+
+$("t").addEventListener("click", e => {
+  const id = e.target.dataset.tg; if (!id) return;
+  tgFor = P.find(p => p.id === id);
+  $("tgTitle").textContent = `${tgFor.name} is trainer for`;
+  const groups = [...new Set(P.filter(p => p.role === "student" && p.grp).map(p => p.grp))].sort();
+  $("tgList").innerHTML = groups.map(g => `<label style="display:flex;gap:8px;align-items:center">
+      <input type="checkbox" value="${esc(g)}" ${tgFor.groups.includes(g) ? "checked" : ""}> ${esc(g)}</label>`).join("")
+    || '<p class="muted small">No student batches yet.</p>';
+  $("tgDlg").showModal();
+});
+$("tgForm").addEventListener("submit", async e => {
+  if (e.submitter?.value !== "save") return;
+  e.preventDefault();
+  const want = [...$("tgList").querySelectorAll("input:checked")].map(i => i.value);
+  const del = tgFor.groups.filter(g => !want.includes(g)), add = want.filter(g => !tgFor.groups.includes(g));
+  if (del.length) { const { error } = await supa.from("hr_trainer_groups").delete().eq("person_id", tgFor.id).in("grp", del); if (error) return toast(error.message); }
+  if (add.length) { const { error } = await supa.from("hr_trainer_groups").insert(add.map(grp => ({ person_id: tgFor.id, grp }))); if (error) return toast(error.message); }
+  $("tgDlg").close(); toast("Saved"); load();
+});
+
+boot("people").then(load).catch(e => toast(e.message, 8000));
+</script>
+</body>
+</html>

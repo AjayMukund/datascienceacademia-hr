@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Attendance Dashboard · Data Science Academia</title>
+<link rel="icon" href="assets/favicon.png">
+<link rel="stylesheet" href="assets/hr.css">
+</head>
+<body>
+<main>
+  <div class="page-head"><h1 id="title">Attendance</h1><span class="sub" id="scope"></span></div>
+
+  <div class="filters">
+    <div class="seg" id="range" role="group" aria-label="Date range">
+      <button data-d="7">7 days</button><button data-d="30" class="on">30 days</button><button data-d="90">90 days</button>
+    </div>
+    <select id="role" aria-label="Role"><option value="">Students &amp; staff</option><option value="student">Students</option><option value="staff">Staff</option></select>
+    <select id="grp" aria-label="Batch or department"><option value="">All batches / depts</option></select>
+    <span class="sp"></span>
+    <button id="csv">Download CSV</button>
+  </div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div class="card">
+    <div class="card-head"><h2>Daily attendance rate</h2><span class="sub" id="trendSub"></span><span class="sp"></span>
+      <button class="link small" id="tblToggle">Show table</button></div>
+    <div class="chart" id="trend"></div>
+    <div class="tw hidden" id="trendTable"></div>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <div class="card-head"><h2>Absentee alerts</h2><span class="sub" id="alertRule"></span></div>
+      <div class="scroll tw"><table id="alerts"><thead><tr><th>Person</th><th>Level</th><th>Why</th></tr></thead><tbody></tbody></table></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>By batch / department</h2><span class="sub">lowest first · dashed line = alert threshold</span></div>
+      <div id="groups" class="scroll"></div>
+    </div>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <div class="card-head"><h2>Absent today</h2><span class="sub" id="absentSub"></span></div>
+      <div class="scroll tw"><table id="absent"><tbody></tbody></table></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Present today</h2><span class="sub" id="presentSub"></span></div>
+      <div class="scroll tw"><table id="present"><thead><tr><th>Name</th><th>Batch / Dept</th><th class="num">In</th><th class="num">Out</th><th></th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-head"><h2>Everyone</h2><span class="sub" id="peopleSub"></span><span class="sp"></span>
+      <input type="search" id="q" placeholder="Search name or ID" aria-label="Search people"></div>
+    <div class="tw"><table id="people"><thead><tr><th>Name</th><th>Batch / Dept</th><th class="num">Attended</th><th class="num">Rate</th><th class="num">Absent in a row</th></tr></thead><tbody></tbody></table></div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="assets/hr.js"></script>
+<script>
+let days = 30, D = null, WHO = null;
+
+const tile = (l, v, n = "") => `<div class="tile"><div class="l">${l}</div><div class="v">${v}</div><div class="n">${n}</div></div>`;
+
+async function load() {
+  D = await rpc("hr_summary", { p_days: days, p_role: $("role").value || null, p_grp: $("grp").value || null });
+  render();
+}
+
+function render() {
+  const s = D.settings, thr = +s.alert_min_pct;
+  const expected = D.present_today + D.absent_today.length + D.not_yet_today.length;
+  $("tiles").innerHTML =
+    tile("Present today", D.is_working_today ? D.present_today : "—", D.is_working_today ? `of ${expected} expected` : "Not a working day") +
+    tile("Late today", D.is_working_today ? D.late_today : "—", `after ${s.late_after_student} students · ${s.late_after_staff} staff`) +
+    tile("Absent today", D.is_working_today ? D.absent_today.length : "—", D.not_yet_today.length ? `${D.not_yet_today.length} more not in yet` : "") +
+    tile(`Average rate · ${days} days`, D.avg_pct == null ? "—" : D.avg_pct + "%", "completed working days") +
+    tile("Needs attention", D.alerts.length, `${D.people} people in view`);
+
+  $("trendSub").textContent = `share of people present each working day · dashed line = ${thr}%`;
+  barChart($("trend"), D.trend.map(t => ({
+    label: fmtDay(t.day), value: t.pct,
+    tip: `${fmtDay(t.day, { weekday: "short", day: "numeric", month: "short" })}<br><b>${t.pct ?? "—"}%</b> · ${t.present} of ${t.expected}${t.late ? ` · ${t.late} late` : ""}`,
+  })), thr);
+  $("trendTable").innerHTML = `<table><thead><tr><th>Date</th><th class="num">Present</th><th class="num">Expected</th><th class="num">Late</th><th class="num">Rate</th></tr></thead><tbody>${
+    D.trend.slice().reverse().map(t => `<tr><td>${fmtDay(t.day, { weekday: "short", day: "numeric", month: "short" })}</td><td class="num">${t.present}</td>
+      <td class="num">${t.expected}</td><td class="num">${t.late}</td><td class="num">${t.pct == null ? "—" : t.pct + "%"}</td></tr>`).join("")}</tbody></table>`;
+
+  $("alertRule").textContent = `${s.alert_consecutive}+ absences in a row, or under ${thr}% over ${s.alert_window_days} days`;
+  $("alerts").tBodies[0].innerHTML = D.alerts.map(a => `<tr class="click" data-id="${a.id}">
+      <td>${esc(a.name)}<div class="muted small">${esc(a.code)} · ${esc(a.grp || a.role)}</div></td>
+      <td><span class="chip ${a.level}">${a.level === "critical" ? "Critical" : "Watch"}</span></td>
+      <td class="small">${a.reasons.map(esc).join("<br>")}</td></tr>`).join("")
+    || `<tr><td colspan="3" class="empty">No one needs attention.</td></tr>`;
+
+  $("groups").innerHTML = D.by_group.map(g => `<div class="hbar" title="${esc(g.grp)}: ${g.pct}% across ${g.people} people">
+      <span class="nm">${esc(g.grp)}${g.role === "staff" ? ' <span class="muted small">staff</span>' : ""}</span>
+      <span class="track"><span class="fill" style="width:${g.pct}%"></span><span class="mk" style="left:${thr}%"></span></span>
+      <span class="pc">${g.pct}%</span></div>`).join("") || `<p class="empty">No data yet.</p>`;
+
+  const abs = D.absent_today.map(p => ({ ...p, st: 1 })).concat(D.not_yet_today.map(p => ({ ...p, st: 0 })));
+  $("absentSub").textContent = D.is_working_today ? `${D.absent_today.length} absent · ${D.not_yet_today.length} not in yet` : "Not a working day";
+  $("absent").tBodies[0].innerHTML = abs.map(p => `<tr class="click" data-id="${p.id}"><td>${esc(p.name)}<div class="muted small">${esc(p.code)}</div></td>
+      <td>${esc(p.grp)}</td><td>${p.st ? '<span class="chip serious">Absent</span>' : '<span class="chip">Not in yet</span>'}</td>
+      <td class="num small muted">${p.streak > 1 ? p.streak + " days in a row" : ""}</td></tr>`).join("")
+    || `<tr><td class="empty">${D.is_working_today ? "Everyone is in." : "—"}</td></tr>`;
+
+  $("presentSub").textContent = `${D.today_rows.length} checked in`;
+  $("present").tBodies[0].innerHTML = D.today_rows.map(r => `<tr class="click" data-id="${r.id}"><td>${esc(r.name)}<div class="muted small">${esc(r.code)}</div></td>
+      <td>${esc(r.grp)}</td><td class="num">${hhmm(r.in_time)}</td><td class="num">${hhmm(r.out_time)}</td>
+      <td>${r.late ? '<span class="chip warning">Late</span>' : '<span class="chip good">On time</span>'}</td></tr>`).join("")
+    || `<tr><td colspan="5" class="empty">No check-ins yet today.</td></tr>`;
+
+  renderPeople();
+}
+
+function renderPeople() {
+  const q = $("q").value.toLowerCase();
+  const rows = D.people_rows.filter(p => !q || `${p.name} ${p.code}`.toLowerCase().includes(q));
+  $("peopleSub").textContent = `last ${D.settings.alert_window_days} days · lowest rate first · click a row for detail`;
+  $("people").tBodies[0].innerHTML = rows.map(p => `<tr class="click" data-id="${p.id}">
+      <td>${esc(p.name)}<div class="muted small">${esc(p.code)}</div></td><td>${esc(p.grp)}</td>
+      <td class="num">${p.attended} / ${p.possible}</td><td class="num">${p.pct == null ? "—" : p.pct + "%"}</td>
+      <td class="num">${p.streak || ""}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">No people.</td></tr>`;
+}
+
+document.addEventListener("click", e => {
+  const tr = e.target.closest("tr.click");
+  if (tr?.dataset.id) location.href = "me.html?id=" + encodeURIComponent(tr.dataset.id);
+});
+$("q").addEventListener("input", renderPeople);
+$("tblToggle").onclick = () => $("tblToggle").textContent = $("trendTable").classList.toggle("hidden") ? "Show table" : "Hide table";
+$("range").querySelectorAll("button").forEach(b => b.onclick = () => {
+  $("range").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+  days = +b.dataset.d; load();
+});
+$("role").onchange = () => { fillGroups(); load(); };
+$("grp").onchange = load;
+let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => D && render(), 150); });
+
+let GROUPS = [];
+function fillGroups() {
+  const r = $("role").value, cur = $("grp").value;
+  const opts = GROUPS.filter(g => !r || g.role === r).map(g => g.grp).filter((g, i, a) => g && a.indexOf(g) === i).sort();
+  $("grp").innerHTML = `<option value="">All batches / depts</option>` + opts.map(g => `<option ${g === cur ? "selected" : ""}>${esc(g)}</option>`).join("");
+}
+
+$("csv").onclick = async () => {
+  const to = D.today, from = new Date(Date.parse(to) - (days - 1) * 864e5).toISOString().slice(0, 10);
+  let q = supa.from("hr_attendance").select("day,in_time,out_time,late,method,hr_people!inner(code,name,role,grp)")
+    .gte("day", from).lte("day", to).order("day");
+  if ($("role").value) q = q.eq("hr_people.role", $("role").value);
+  if ($("grp").value) q = q.eq("hr_people.grp", $("grp").value);
+  const out = [["date", "id", "name", "role", "batch_or_dept", "in", "out", "status", "method"]];
+  for (let from_ = 0; ; from_ += 1000) {
+    const { data, error } = await q.range(from_, from_ + 999);
+    if (error) return toast(error.message);
+    data.forEach(r => out.push([r.day, r.hr_people.code, r.hr_people.name, r.hr_people.role, r.hr_people.grp,
+      r.in_time, r.out_time || "", r.late ? "late" : "on time", r.method]));
+    if (data.length < 1000) break;
+  }
+  const csv = out.map(r => r.map(v => /[",\n]/.test(v) ? `"${String(v).replace(/"/g, '""')}"` : v).join(",")).join("\n");
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })), download: `attendance_${from}_to_${to}.csv` });
+  a.click(); URL.revokeObjectURL(a.href);
+};
+
+boot("dashboard").then(async who => {
+  WHO = who;
+  $("title").textContent = who.is_admin ? "Attendance" : "My batches";
+  $("scope").textContent = who.is_admin ? "Everyone at the institute" : "Batches: " + who.trainer_groups.join(", ");
+  const { data } = await supa.from("hr_people").select("role,grp").eq("active", true);
+  GROUPS = data || []; fillGroups();
+  await load();
+  setInterval(load, 120000);
+}).catch(e => toast(e.message, 8000));
+</script>
+</body>
+</html>

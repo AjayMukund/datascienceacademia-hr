@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Reset Password · HR & Attendance</title>
+<link rel="icon" href="assets/favicon.png">
+<link rel="stylesheet" href="assets/hr.css">
+</head>
+<body>
+<div class="auth">
+  <div class="auth-card">
+    <div class="brand"><b>Data Science Academia</b><span>HR &amp; Attendance</span></div>
+    <h1>Set a password</h1>
+    <p class="lead">Enter your email. If it has an account, we'll send a link to set a new password.</p>
+    <form id="f">
+      <div id="msg" class="msg hidden"></div>
+      <label class="f">Email <input type="email" id="email" required autocomplete="email" autofocus></label>
+      <button class="gold" id="btn">Send link</button>
+    </form>
+    <p class="auth-foot"><a href="index.html">← Back to sign in</a></p>
+    <p class="auth-foot small">No account yet? Ask the office to send you an invite.</p>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="assets/hr.js"></script>
+<script>
+$("f").addEventListener("submit", async e => {
+  e.preventDefault();
+  $("btn").disabled = true;
+  const { error } = await supa.auth.resetPasswordForEmail($("email").value.trim(), {
+    redirectTo: location.origin + location.pathname.replace(/[^/]*$/, "") + "set-password.html",
+  });
+  const m = $("msg");
+  m.className = "msg " + (error ? "err" : "ok");
+  m.textContent = error ? error.message : "If that email has an account, a link is on its way. Check spam too.";
+  $("btn").disabled = false;
+});
+</script>
+</body>
+</html>

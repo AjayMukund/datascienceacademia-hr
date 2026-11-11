@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>HR & Attendance · Data Science Academia</title>
+<link rel="icon" href="assets/favicon.png">
+<link rel="stylesheet" href="assets/hr.css">
+</head>
+<body>
+<div class="auth">
+  <div class="auth-card">
+    <div class="brand"><b>Data Science Academia</b><span>HR &amp; Attendance</span></div>
+    <h1>Sign in</h1>
+    <p class="lead">Students, parents, trainers and staff. Use the email the institute has on file.</p>
+    <form id="f">
+      <div id="msg" class="msg err hidden"></div>
+      <label class="f">Email <input type="email" id="email" required autocomplete="email" autofocus></label>
+      <label class="f">Password <input type="password" id="pw" required autocomplete="current-password"></label>
+      <button class="gold" id="btn">Sign in →</button>
+    </form>
+    <p class="auth-foot"><a href="forgot.html">Forgot or never set a password?</a></p>
+    <p class="auth-foot">Same login as the <a href="https://datascienceacademia.in/login.html">student portal</a>.</p>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="assets/hr.js"></script>
+<script>
+const next = () => {
+  const n = new URLSearchParams(location.search).get("next") || "";
+  return /^[a-z-]+\.html(\?[\w=&%.-]*)?$/i.test(n) ? n : "dashboard.html";   // boot() redirects non-admins onward
+};
+(async () => {
+  if (location.hash.includes("type=recovery") || location.hash.includes("type=invite")) {
+    location.replace("set-password.html" + location.hash); return;
+  }
+  const { data: { session } } = await supa.auth.getSession();
+  if (session) location.replace(next());
+})();
+$("f").addEventListener("submit", async e => {
+  e.preventDefault();
+  $("btn").disabled = true; $("btn").textContent = "Signing in…"; $("msg").classList.add("hidden");
+  const { error } = await supa.auth.signInWithPassword({ email: $("email").value.trim(), password: $("pw").value });
+  if (error) {
+    $("msg").textContent = error.message === "Invalid login credentials"
+      ? "Wrong email or password. If you've never set a password, use the link below." : error.message;
+    $("msg").classList.remove("hidden"); $("btn").disabled = false; $("btn").textContent = "Sign in →";
+    return;
+  }
+  location.replace(next());
+});
+</script>
+</body>
+</html>
