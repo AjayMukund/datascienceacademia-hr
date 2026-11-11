@@ -15,7 +15,7 @@
 
   <div class="filters">
     <input type="search" id="q" placeholder="Search name, ID, batch, email" aria-label="Search">
-    <select id="fRole" aria-label="Role"><option value="">Everyone</option><option value="student">Students</option><option value="staff">Staff</option></select>
+    <select id="fRole" aria-label="Role"><option value="">Everyone</option><option value="student">Students</option><option value="staff">Staff</option><option value="admin">Admins</option></select>
     <select id="fAcc" aria-label="Account"><option value="">Any account status</option><option value="none">No login yet</option><option value="linked">Linked</option></select>
     <span class="sp"></span>
     <span class="small muted" id="selCount"></span>
@@ -34,7 +34,7 @@
       <li><b>Admins</b>: anyone with the <i>admin</i> role in the student portal sees everything here.</li>
       <li><b>Students &amp; staff</b> see only their own record. They're linked when they sign in with the email on their record.</li>
       <li><b>Parents</b> see their child when they sign in with the guardian email on the child's record.</li>
-      <li><b>Trainers</b> also see the student batches you tick under "Trainer for".</li>
+      <li><b>Trainers</b> (staff or admin records) also see the student batches you tick under "Trainer for".</li>
       <li>Fingerprints are never uploaded; only check-in and check-out times are.</li>
     </ul>
   </div>
@@ -74,7 +74,7 @@ function loginChip(p) {
   return '<span class="chip">No login yet</span>';
 }
 function guardianChip(p) {
-  if (p.role === "staff") return "";
+  if (p.role !== "student") return "";
   if (!p.guardian_email) return '<span class="muted small">—</span>';
   const st = p.guardian_linked ? '<span class="chip good">Linked</span>'
     : p.guardian_has_account ? '<span class="chip warning">Links on sign-in</span>' : '<span class="chip">No login yet</span>';
@@ -88,9 +88,9 @@ function render() {
     && (!q || `${p.name} ${p.code} ${p.grp} ${p.email} ${p.guardian_email}`.toLowerCase().includes(q)));
   $("t").tBodies[0].innerHTML = rows.map(p => `<tr>
       <td><input type="checkbox" data-id="${p.id}" ${sel.has(p.id) ? "checked" : ""} aria-label="Select ${esc(p.name)}"></td>
-      <td>${esc(p.name)}<div class="muted small">${esc(p.code)} · ${p.role === "staff" ? "Staff" : "Student"}${p.email ? " · " + esc(p.email) : ""}</div></td>
+      <td>${esc(p.name)}<div class="muted small">${esc(p.code)} · ${{ student: "Student", staff: "Staff", admin: "Admin" }[p.role]}${p.email ? " · " + esc(p.email) : ""}</div></td>
       <td>${esc(p.grp)}</td><td>${loginChip(p)}</td><td>${guardianChip(p)}</td>
-      <td>${p.role === "staff" ? `${p.groups.length ? p.groups.map(esc).join(", ") : '<span class="muted small">none</span>'}
+      <td>${p.role !== "student" ? `${p.groups.length ? p.groups.map(esc).join(", ") : '<span class="muted small">none</span>'}
           <div><button class="link small" data-tg="${p.id}">Edit</button></div>` : ""}</td></tr>`).join("")
     || `<tr><td colspan="6" class="empty">No people yet. Turn on sync on the attendance PC (Admin, then Settings, then Online sync).</td></tr>`;
   $("selCount").textContent = sel.size ? `${sel.size} selected` : "";

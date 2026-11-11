@@ -16,7 +16,7 @@
     <div class="seg" id="range" role="group" aria-label="Date range">
       <button data-d="7">7 days</button><button data-d="30" class="on">30 days</button><button data-d="90">90 days</button>
     </div>
-    <select id="role" aria-label="Role"><option value="">Students &amp; staff</option><option value="student">Students</option><option value="staff">Staff</option></select>
+    <select id="role" aria-label="Role"><option value="">Everyone</option><option value="student">Students</option><option value="staff">Staff</option><option value="admin">Admins</option></select>
     <select id="grp" aria-label="Batch or department"><option value="">All batches / depts</option></select>
     <span class="sp"></span>
     <button id="csv">Download CSV</button>
@@ -99,7 +99,7 @@ function render() {
     || `<tr><td colspan="3" class="empty">No one needs attention.</td></tr>`;
 
   $("groups").innerHTML = D.by_group.map(g => `<div class="hbar" title="${esc(g.grp)}: ${g.pct}% across ${g.people} people">
-      <span class="nm">${esc(g.grp)}${g.role === "staff" ? ' <span class="muted small">staff</span>' : ""}</span>
+      <span class="nm">${esc(g.grp)}${g.role !== "student" ? ` <span class="muted small">${g.role}</span>` : ""}</span>
       <span class="track"><span class="fill" style="width:${g.pct}%"></span><span class="mk" style="left:${thr}%"></span></span>
       <span class="pc">${g.pct}%</span></div>`).join("") || `<p class="empty">No data yet.</p>`;
 

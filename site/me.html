@@ -54,9 +54,9 @@ const tile = (l, v, n = "") => `<div class="tile"><div class="l">${l}</div><div 
 
 async function load() {
   const r = await rpc("hr_person_report", { p_person: pid, p_days: days });
-  const p = r.person, staff = p.role === "staff";
+  const p = r.person, staff = p.role !== "student";
   $("name").textContent = p.name;
-  $("sub").textContent = `${p.code} · ${p.grp || (staff ? "Staff" : "Student")} · joined ${fmtDay(p.joined_on, { day: "numeric", month: "short", year: "numeric" })}`;
+  $("sub").textContent = `${p.code} · ${p.grp || ({ student: "Student", staff: "Staff", admin: "Admin" }[p.role])} · joined ${fmtDay(p.joined_on, { day: "numeric", month: "short", year: "numeric" })}`;
   document.title = `${p.name} · Attendance`;
 
   const pct = r.possible ? Math.round(1000 * r.present / r.possible) / 10 : null;
